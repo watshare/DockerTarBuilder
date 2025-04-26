@@ -41,7 +41,7 @@ jobs:
             continue
           }
 
-          uris=$(echo "$download_output" | grep -oP '(?<=http://).*?(?=")')
+          uris=$(echo "$download_output" | grep -oP '(?<=http://).*?(?=\")')
           if [ -z "$uris" ]; then
             echo "No valid download URIs found for package '$package'."
             continue
