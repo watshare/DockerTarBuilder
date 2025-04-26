@@ -1,0 +1,75 @@
+name: Npm Package Download and Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      npm_packages:
+        description: '请填写 npm 包名称及版本号，多个用英文逗号分开，如 lodash@4.17.21,axios@1.4.0'
+        required: true
+        default: 'lodash@4.17.21,axios@1.4.0'  # 设置默认的带版本号的 npm 包列表
+      node_version:
+        description: '请填写要使用的 Node.js 版本'
+        required: false
+        default: '18'  # 设置默认的 Node.js 版本
+      npm_version:
+        description: '请填写要使用的 npm 版本'
+        required: false
+        default: 'latest'  # 设置默认的 npm 版本
+
+jobs:
+  download_and_package:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ github.event.inputs.node_version }}
+
+    - name: Install specific npm version
+      run: npm install -g npm@${{ github.event.inputs.npm_version }}
+
+    - name: Create a directory for packages
+      run: New-Item -ItemType Directory -Force -Path npm_packages
+
+    - name: Download and package npm packages
+      run: |
+        $packages = "${{ github.event.inputs.npm_packages }}"
+        $packageArray = $packages -split ','
+        foreach ($package in $packageArray) {
+          $packageName = $package.Split('@')[0]
+          New-Item -ItemType Directory -Force -Path "npm_packages\$packageName"
+          Set-Location -Path "npm_packages\$packageName"
+          try {
+            npm pack $package --pack-destination .
+            Compress-Archive -Path *.tgz -DestinationPath "$packageName.tar.gz"
+            Remove-Item -Path *.tgz
+            Write-Output "Successfully packed $package"
+          }
+          catch {
+            Write-Output "Failed to pack $package. Error details:"
+            npm pack $package --pack-destination . 2>&1
+          }
+          Set-Location -Path ..\..
+        }
+
+    - name: List files for debugging
+      run: |
+        Write-Output "Current working directory:"
+        Get-Location
+        Write-Output "Contents of the current directory:"
+        Get-ChildItem -Recurse
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: npm-packages-artifact
+        path: npm_packages\**\*.tar.gz
+        retention-days: 1
+        if-no-files-found: warn
+        compression-level: 6
+        overwrite: false
+        include-hidden-files: false    

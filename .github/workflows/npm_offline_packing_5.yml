@@ -1,0 +1,72 @@
+name: Npm Package Download and Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      npm_packages:
+        description: '请填写 npm 包名称及版本号，多个用英文逗号分开，如 lodash@4.17.21,axios@1.4.0'
+        required: true
+        default: 'lodash@4.17.21,axios@1.4.0'  # 设置默认的带版本号的 npm 包列表
+      node_version:
+        description: '请填写要使用的 Node.js 版本'
+        required: false
+        default: '18'  # 设置默认的 Node.js 版本
+      npm_version:
+        description: '请填写要使用的 npm 版本'
+        required: false
+        default: 'latest'  # 设置默认的 npm 版本
+
+jobs:
+  download_and_package:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ github.event.inputs.node_version }}
+
+    - name: Install specific npm version
+      run: npm install -g npm@${{ github.event.inputs.npm_version }}
+
+    - name: Create a directory for packages
+      run: mkdir -p npm_packages
+
+    - name: Download and package npm packages
+      run: |
+        packages="${{ github.event.inputs.npm_packages }}"
+        IFS=',' read -r -a package_array <<< "$packages"
+        for package in "${package_array[@]}"; do
+          # 提取包名，去除版本号
+          package_name=$(echo $package | cut -d '@' -f 1)
+          mkdir -p "npm_packages/$package_name"
+          cd "npm_packages/$package_name"
+          if npm pack "$package" --pack-destination .; then
+            tar -czvf "$package_name.tar.gz" *.tgz
+            rm *.tgz
+            echo "Successfully packed $package"
+          else
+            echo "Failed to pack $package. Error details:"
+            npm pack "$package" --pack-destination . 2>&1
+          fi
+          cd ../..
+        done
+    - name: List files for debugging
+      run: |
+        echo "Current working directory:"
+        pwd
+        echo "Contents of the current directory:"
+        ls -R
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: npm-packages-artifact
+        path: npm_packages/**/*.tar.gz
+        retention-days: 1
+        if-no-files-found: warn
+        compression-level: 6
+        overwrite: false
+        include-hidden-files: false    
