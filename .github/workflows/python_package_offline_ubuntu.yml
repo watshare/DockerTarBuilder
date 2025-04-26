@@ -1,0 +1,54 @@
+name: Python Plugin Packaging
+
+on:
+  workflow_dispatch:
+    inputs:
+      python_project_url:
+        description: '请填写 Python 项目的 Git 仓库地址'
+        required: true
+        default: 'https://github.com/example/python-plugin.git'  # 设置默认的 Python 项目地址
+      python_version:
+        description: '请选择 Python 版本'
+        required: true
+        default: '3.10'
+
+jobs:
+  package_python_plugin:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ github.event.inputs.python_version }}
+
+      - name: Clone Python project
+        run: |
+          git clone ${{ github.event.inputs.python_project_url }} python_plugin_project
+          cd python_plugin_project
+
+      - name: Create virtual environment and install dependencies
+        run: |
+          cd python_plugin_project
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      - name: Package Python plugin
+        run: |
+          cd python_plugin_project
+          source venv/bin/activate
+          python setup.py sdist bdist_wheel
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-plugin-packages
+          path: python_plugin_project/dist/*.{tar.gz,whl}
+          retention-days: 1  # 将保留天数设置为 1 天 最多可设置90天
