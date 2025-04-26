@@ -1,0 +1,45 @@
+name: Python Plugin Packager
+
+on:
+  workflow_dispatch:
+    inputs:
+      python_version:
+        description: '请输入 Python 版本 (例如: 3.8)'
+        required: true
+        default: '3.8'
+      packages:
+        description: '请输入要下载的 PyPI 插件名称和版本，多个用逗号分隔 (例如: requests==2.28.1, numpy==1.23.5)'
+        required: true
+        default: 'requests==2.28.1'
+
+jobs:
+  package-python-plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ github.event.inputs.python_version }}
+
+      - name: Create download directory
+        run: mkdir -p python_plugin_packages
+
+      - name: Download packages
+        run: |
+          IFS=',' read -ra packages <<< "${{ github.event.inputs.packages }}"
+          for package in "${packages[@]}"; do
+            pip download "$package" -d python_plugin_packages
+          done
+
+      - name: Package downloaded packages
+        run: zip -r python_plugin_pack.zip python_plugin_packages
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-plugin-pack
+          path: python_plugin_pack.zip
+    
