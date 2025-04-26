@@ -1,0 +1,102 @@
+name: Apt Package Download and Package with Dependencies
+
+on:
+  workflow_dispatch:
+    inputs:
+      apt_packages:
+        description: '请填写 apt 包名称，多个用英文逗号分开'
+        required: true
+        default: 'curl,wget'  # 设置默认的 apt 包列表
+
+jobs:
+  download_and_package:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Update apt cache
+      run: |
+        echo "Updating apt cache..."
+        sudo apt-get update
+
+    - name: Create a directory for packages
+      run: mkdir -p apt_packages
+
+    - name: Download apt packages and their dependencies
+      run: |
+        set -e  # Exit if any command fails
+        packages="${{ github.event.inputs.apt_packages }}"
+        IFS=',' read -r -a package_array <<< "$packages"
+        temp_dir=$(mktemp -d)
+
+        for package in "${package_array[@]}"; do
+          echo "Trying to download package: $package and its dependencies"
+
+          # Attempt to obtain download URIs
+          download_output=$(sudo apt-get download --print-uris "$package" 2>&1) || {
+            echo "Failed to get download URIs for package '$package'. Error details:"
+            echo "$download_output"
+            continue
+          }
+
+          uris=$(echo "$download_output" | grep -oP '(?<=http://).*?(?=")')
+
+          if [ -z "$uris" ]; then
+            echo "No valid download URIs found for package '$package'."
+            continue
+          fi
+
+          for uri in $uris; do
+            full_uri="http://$uri"
+            echo "Downloading $full_uri to $temp_dir"
+            
+            # Attempt to download the file with wget
+            if ! wget -P "$temp_dir" "$full_uri"; then
+              echo "Failed to download $full_uri."
+              continue
+            fi
+          done
+        done
+
+        # Check if there are any downloaded .deb files and move them
+        if [ -n "$(ls -A $temp_dir)" ]; then
+          mv "$temp_dir/"*.deb apt_packages/ || echo "No .deb files found to move."
+        else
+          echo "No files were downloaded to the temporary directory."
+        fi
+
+        rm -rf "$temp_dir"
+
+    - name: Package downloaded apt packages
+      run: |
+        cd apt_packages
+        for deb_file in *.deb; do
+          if [ -f "$deb_file" ]; then
+            package_name=$(dpkg-deb -f "$deb_file" Package)
+            mkdir -p "$package_name"
+            mv "$deb_file" "$package_name/"
+            tar -czvf "$package_name.tar.gz" "$package_name"
+            rm -rf "$package_name"
+            echo "Successfully packed $package_name"
+          fi
+        done
+
+    - name: List files for debugging
+      run: |
+        echo "Current working directory:"
+        pwd
+        echo "Contents of the current directory:"
+        ls -R
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: apt-packages-artifact
+        path: apt_packages/**/*.tar.gz
+        retention-days: 1
+        if-no-files-found: warn
+        compression-level: 6
+        overwrite: false
+        include-hidden-files: false
