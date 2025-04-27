@@ -21,29 +21,29 @@ jobs:
         run: mkdir -p /tmp/packages
 
       - name: 清理apt缓存
-        run: apt-get clean
+        run: sudo apt-get clean
 
       - name: 更新apt源
-        run: apt-get update -y
+        run: sudo apt-get update -y
 
       - name: 修复软件包依赖
-        run: apt-get install -f
+        run: sudo apt-get install -f
 
       - name: 重置dpkg数据库
-        run: dpkg --configure -a
+        run: sudo dpkg --configure -a
 
       - name: 下载指定软件包及其依赖（处理debconf-2.0错误）
         run: |
           # 尝试正常下载软件包及其依赖
-          apt-get -d install ${{ github.event.inputs.package_name }}
-          apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ ") || true
+          sudo apt-get -d install ${{ github.event.inputs.package_name }}
+          sudo apt download $(sudo apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ ") || true
           # 若出现debconf-2.0错误，使用修正命令
-          apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ " | sed 's/debconf-2.0/debconf/g') || true
+          sudo apt download $(sudo apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ " | sed 's/debconf-2.0/debconf/g') || true
           # 若仍有问题，使用备用下载命令
-          for i in $(apt-cache depends ${{ github.event.inputs.package_name }}| grep -E 'Depends|Recommends|Suggests' | cut -d ':' -f 2,3 | sed -e s/'<'/''/ -e s/'>'/''/); do apt-get download $i 2>>errors.txt; done || true
+          for i in $(sudo apt-cache depends ${{ github.event.inputs.package_name }} | grep -E 'Depends|Recommends|Suggests' | cut -d ':' -f 2,3 | sed -e s/'<'/''/ -e s/'>'/''/); do sudo apt-get download $i; done
 
       - name: 移动下载的软件包
-        run: mv /var/cache/apt/archives/*.deb /tmp/packages
+        run: sudo mv /var/cache/apt/archives/*.deb /tmp/packages
 
       - name: 打包下载的软件包
         run: |
@@ -60,8 +60,9 @@ jobs:
         run: |
           # 模拟进入目标无网络环境的操作（实际需手动传输软件包）
           cd /tmp/packages
-          dpkg -i *.deb || true
+          sudo dpkg -i *.deb || true
           # 处理可能的依赖问题
-          apt-get install -f || true
+          sudo apt-get install -f || true
+
       - name: 移除sudo权限
         run: sudo rm /etc/sudoers.d/runner
