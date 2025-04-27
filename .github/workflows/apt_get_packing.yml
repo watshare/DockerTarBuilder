@@ -4,48 +4,38 @@ on:
   workflow_dispatch:
     inputs:
       package_name:
-        description: 'Name of the package to download'
+        description: '软件包名称'
         required: true
-        default: 'gcc'
+        type: string
 
 jobs:
   download-packages:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: 创建保存目录
+        run: mkdir -p /home/tuners/1
 
-      - name: Create download directory
+      - name: 安装 aptitude 和 apt-rdepends
         run: |
-          mkdir -p /home/tuners/1
+          sudo apt update
+          sudo apt install aptitude apt-rdepends -y
 
-      - name: Install aptitude
+      - name: 下载指定软件包及其依赖
         run: |
-          sudo apt-get update
-          sudo apt-get install -y aptitude
+          apt-get -d install ${{ github.event.inputs.package_name }}
+          apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ ")
 
-      - name: Download package and its dependencies
-        run: |
-          sudo apt-get -d install ${{ github.event.inputs.package_name }}
-          sudo mv /var/cache/apt/archives/*.deb /home/tuners/1
+      - name: 移动下载的软件包
+        run: mv /var/cache/apt/archives/*.deb /home/tuners/1
 
-      - name: Install apt-rdepends
-        run: |
-          sudo apt-get install -y apt-rdepends
-
-      - name: Download all dependencies
-        run: |
-          sudo apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ ")
-          sudo mv /var/cache/apt/archives/*.deb /home/tuners/1
-
-      - name: Package downloaded files
+      - name: 打包下载的软件包
         run: |
           cd /home/tuners
-          tar -zcvf ${{ github.event.inputs.package_name }}_offline.tar.gz 1
+          tar -czvf packages.tar.gz 1
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: 上传打包文件
+        uses: actions/upload-artifact@v3
         with:
-          name: ${{ github.event.inputs.package_name }}_offline
-          path: /home/tuners/${{ github.event.inputs.package_name }}_offline.tar.gz    
+          name: offline-packages
+          path: /home/tuners/packages.tar.gz    
