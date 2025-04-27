@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: 创建保存目录
-        run: mkdir -p /home/tuners/1
+        run: mkdir -p /tmp/packages
 
       - name: 安装 aptitude 和 apt-rdepends
         run: |
@@ -27,15 +27,16 @@ jobs:
           apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ ")
 
       - name: 移动下载的软件包
-        run: mv /var/cache/apt/archives/*.deb /home/tuners/1
+        run: mv /var/cache/apt/archives/*.deb /tmp/packages
 
       - name: 打包下载的软件包
         run: |
-          cd /home/tuners
-          tar -czvf packages.tar.gz 1
+          cd /tmp
+          tar -czvf packages.tar.gz packages
 
       - name: 上传打包文件
         uses: actions/upload-artifact@v4
         with:
           name: offline-packages
-          path: /home/tuners/packages.tar.gz    
+          path: /tmp/packages.tar.gz
+    
