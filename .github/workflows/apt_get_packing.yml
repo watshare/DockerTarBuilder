@@ -16,10 +16,20 @@ jobs:
       - name: 创建保存目录
         run: mkdir -p /tmp/packages
 
-      - name: 更新 apt 源并安装 aptitude 和 apt-rdepends
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y aptitude apt-rdepends
+      - name: 清理 apt 缓存
+        run: sudo apt-get clean
+
+      - name: 更新 apt 源
+        run: sudo apt-get update -y
+
+      - name: 修复软件包依赖
+        run: sudo apt-get install -f
+
+      - name: 重置 dpkg 数据库
+        run: sudo dpkg --configure -a
+
+      - name: 安装 aptitude 和 apt-rdepends
+        run: sudo apt-get install -y aptitude apt-rdepends
 
       - name: 下载指定软件包及其依赖
         run: |
