@@ -15,40 +15,91 @@ jobs:
     steps:
       - name: 添加用户到sudoers组并赋予权限
         run: |
+          echo "Adding runner to sudoers group..."
           echo "runner ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/runner
           sudo chmod 0440 /etc/sudoers.d/runner
+          echo "Sudoers group updated."
+
       - name: 创建保存目录
-        run: mkdir -p /tmp/packages
+        run: |
+          echo "Creating directory for packages..."
+          sudo mkdir -p /tmp/packages
+          sudo chmod 777 /tmp/packages
+          echo "Directory /tmp/packages created."
 
       - name: 清理apt缓存
-        run: sudo apt-get clean
+        run: |
+          echo "Cleaning apt cache..."
+          sudo apt-get clean
+          echo "Apt cache cleaned."
 
       - name: 更新apt源
-        run: sudo apt-get update -y
+        run: |
+          echo "Updating apt package lists..."
+          sudo apt-get update -y
+          echo "Apt package lists updated."
 
       - name: 修复软件包依赖
-        run: sudo apt-get install -f
+        run: |
+          echo "Fixing package dependencies..."
+          sudo apt-get install -f
+          echo "Dependencies fixed."
 
       - name: 重置dpkg数据库
-        run: sudo dpkg --configure -a
+        run: |
+          echo "Resetting dpkg database..."
+          sudo dpkg --configure -a
+          echo "dpkg database reset."
+
+      - name: 安装apt-rdepends
+        run: |
+          echo "Installing apt-rdepends for dependency resolution..."
+          sudo apt-get install -y apt-rdepends
+          echo "apt-rdepends installed."
 
       - name: 下载指定软件包及其依赖（处理debconf-2.0错误）
         run: |
-          # 尝试正常下载软件包及其依赖
-          sudo apt-get -d install ${{ github.event.inputs.package_name }}
-          sudo apt download $(sudo apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ ") || true
-          # 若出现debconf-2.0错误，使用修正命令
-          sudo apt download $(sudo apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ " | sed 's/debconf-2.0/debconf/g') || true
-          # 若仍有问题，使用备用下载命令
-          for i in $(sudo apt-cache depends ${{ github.event.inputs.package_name }} | grep -E 'Depends|Recommends|Suggests' | cut -d ':' -f 2,3 | sed -e s/'<'/''/ -e s/'>'/''/); do sudo apt-get download $i; done
+          echo "Downloading specified package and its dependencies..."
+
+          echo "Downloading package: ${{ github.event.inputs.package_name }}"
+          sudo apt-get -d install ${{ github.event.inputs.package_name }} || true
+
+          echo "Resolving dependencies using apt-rdepends..."
+          sudo apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ ") || true
+
+          echo "Handling debconf-2.0 error if any..."
+          sudo apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ " | sed 's/debconf-2.0/debconf/g') || true
+
+          echo "Using fallback method for downloading dependencies..."
+          for i in $(sudo apt-cache depends ${{ github.event.inputs.package_name }} | grep -E 'Depends|Recommends|Suggests' | cut -d ':' -f 2,3 | sed -e s/'<'/''/ -e s/'>'/''/); do
+            echo "Downloading dependency: $i"
+            sudo apt-get download $i || true
+          done
+
+          echo "Download process completed. Checking downloaded files..."
+          ls -l /var/cache/apt/archives/
+
+      - name: 确保存在下载的软件包
+        run: |
+          echo "Verifying downloaded packages..."
+          if [ ! "$(ls -A /var/cache/apt/archives/*.deb 2>/dev/null)" ]; then
+            echo "No .deb files were downloaded. Please check the package name or download commands.";
+            exit 1;
+          fi
+          echo "Packages downloaded successfully."
 
       - name: 移动下载的软件包
-        run: sudo mv /var/cache/apt/archives/*.deb /tmp/packages
+        run: |
+          echo "Moving downloaded .deb files to /tmp/packages..."
+          sudo mv /var/cache/apt/archives/*.deb /tmp/packages
+          echo "Downloaded files moved to /tmp/packages."
 
       - name: 打包下载的软件包
         run: |
+          echo "Compressing downloaded packages into a tarball..."
           cd /tmp
           tar -czvf packages.tar.gz packages
+          echo "Tarball created at /tmp/packages.tar.gz."
 
       - name: 上传打包文件
         uses: actions/upload-artifact@v4
@@ -58,11 +109,15 @@ jobs:
 
       - name: 安装下载的软件包（假设已将软件包传输到目标无网络环境）
         run: |
-          # 模拟进入目标无网络环境的操作（实际需手动传输软件包）
+          echo "Installing downloaded packages in an offline environment..."
           cd /tmp/packages
           sudo dpkg -i *.deb || true
-          # 处理可能的依赖问题
+          echo "Resolving dependencies in offline environment..."
           sudo apt-get install -f || true
+          echo "Packages installed."
 
       - name: 移除sudo权限
-        run: sudo rm /etc/sudoers.d/runner
+        run: |
+          echo "Removing sudo privileges for runner..."
+          sudo rm /etc/sudoers.d/runner
+          echo "Sudo privileges removed."
