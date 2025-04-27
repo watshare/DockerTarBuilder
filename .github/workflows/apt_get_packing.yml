@@ -16,18 +16,18 @@ jobs:
       - name: 创建保存目录
         run: mkdir -p /tmp/packages
 
-      - name: 安装 aptitude 和 apt-rdepends
+      - name: 更新 apt 源并安装 aptitude 和 apt-rdepends
         run: |
-          sudo apt update
-          sudo apt install aptitude apt-rdepends -y
+          sudo apt-get update -y
+          sudo apt-get install -y aptitude apt-rdepends
 
       - name: 下载指定软件包及其依赖
         run: |
-          apt-get -d install ${{ github.event.inputs.package_name }}
-          apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ ")
+          sudo apt-get -d install ${{ github.event.inputs.package_name }}
+          sudo apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ ")
 
       - name: 移动下载的软件包
-        run: mv /var/cache/apt/archives/*.deb /tmp/packages
+        run: sudo mv /var/cache/apt/archives/*.deb /tmp/packages
 
       - name: 打包下载的软件包
         run: |
