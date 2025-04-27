@@ -34,7 +34,7 @@ jobs:
         tar -czvf /tmp/${{ github.event.inputs.package }}.tar.gz -C /tmp package-backup
 
     - name: Upload packaged software
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ github.event.inputs.package }}.tar.gz
         path: /tmp/${{ github.event.inputs.package }}.tar.gz
