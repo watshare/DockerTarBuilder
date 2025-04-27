@@ -13,10 +13,10 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: 创建保存目录
-        run: sudo mkdir -p /tmp/packages
-        # 确保目录权限正确
-        run: sudo chmod 777 /tmp/packages
+      - name: 创建保存目录并设置权限
+        run: |
+          sudo mkdir -p /tmp/packages
+          sudo chmod 777 /tmp/packages
 
       - name: 清理 apt 缓存
         run: sudo apt-get clean
@@ -60,4 +60,4 @@ jobs:
           cd /tmp/packages
           sudo dpkg -i *.deb || true
           # 处理可能的依赖问题
-          sudo apt-get install -f || true
+          sudo apt-get install -f || true    
