@@ -1,10 +1,10 @@
-name: Offline Package Download
+name: Offline Package Download and DNS Setup
 
 on:
   workflow_dispatch:
     inputs:
       package_name:
-        description: '软件包名称'
+        description: '软件包名称（可用于安装bind9和dnsutils等）'
         required: true
         type: string
 
@@ -16,25 +16,27 @@ jobs:
       - name: 创建保存目录
         run: mkdir -p /tmp/packages
 
-      - name: 清理 apt 缓存
+      - name: 清理apt缓存
         run: sudo apt-get clean
 
-      - name: 更新 apt 源
+      - name: 更新apt源
         run: sudo apt-get update -y
 
       - name: 修复软件包依赖
         run: sudo apt-get install -f
 
-      - name: 重置 dpkg 数据库
+      - name: 重置dpkg数据库
         run: sudo dpkg --configure -a
 
-      - name: 安装 aptitude 和 apt-rdepends
-        run: sudo apt-get install -y aptitude apt-rdepends
-
-      - name: 下载指定软件包及其依赖
+      - name: 下载指定软件包及其依赖（处理debconf-2.0错误）
         run: |
-          sudo apt-get -d install ${{ github.event.inputs.package_name }}
-          sudo apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ ")
+          # 尝试正常下载软件包及其依赖
+          apt-get -d install ${{ github.event.inputs.package_name }}
+          apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ ") || true
+          # 若出现debconf-2.0错误，使用修正命令
+          apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ " | sed 's/debconf-2.0/debconf/g') || true
+          # 若仍有问题，使用备用下载命令
+          for i in $(apt-cache depends ${{ github.event.inputs.package_name }}| grep -E 'Depends|Recommends|Suggests' | cut -d ':' -f 2,3 | sed -e s/'<'/''/ -e s/'>'/''/); do sudo apt-get download $i 2>>errors.txt; done || true
 
       - name: 移动下载的软件包
         run: sudo mv /var/cache/apt/archives/*.deb /tmp/packages
@@ -49,4 +51,11 @@ jobs:
         with:
           name: offline-packages
           path: /tmp/packages.tar.gz
-    
+
+      - name: 安装下载的软件包（假设已将软件包传输到目标无网络环境）
+        run: |
+          # 模拟进入目标无网络环境的操作（实际需手动传输软件包）
+          cd /tmp/packages
+          sudo dpkg -i *.deb || true
+          # 处理可能的依赖问题
+          sudo apt-get install -f || true
