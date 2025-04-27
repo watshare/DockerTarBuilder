@@ -29,7 +29,7 @@ jobs:
         # Create a directory to store the package files
         mkdir -p /tmp/package-backup
         # Use dpkg to list the installed package's dependencies and copy all relevant files
-        dpkg-query -L ${{ github.event.inputs.package }} | xargs -I {} sudo cp --parents {} /tmp/package-backup/
+        dpkg-query -L ${{ github.event.inputs.package }} | xargs -I {} sudo cp --parents -r {} /tmp/package-backup/
         # Archive the directory into a tarball
         tar -czvf /tmp/${{ github.event.inputs.package }}.tar.gz -C /tmp package-backup
 
