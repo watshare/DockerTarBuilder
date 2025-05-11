@@ -1,61 +1,68 @@
-name: Offline Package Download and DNS Setup
+name: Node.js and Yarn Installer with Cache Upload
 
 on:
   workflow_dispatch:
     inputs:
-      package_name:
-        description: '软件包名称（可用于安装bind9和dnsutils等）'
+      node-version:
+        description: 'Node.js version to install'
         required: true
-        type: string
+        default: '18.x'
+      yarn-version:
+        description: 'Yarn version to install'
+        required: true
+        default: '1.22.19'
+      packages:
+        description: 'Comma-separated list of packages to install globally (e.g., eslint@8.0.0,prettier@2.0.0)'
+        required: false
 
 jobs:
-  download-packages:
+  install-and-cache:
     runs-on: ubuntu-22.04
-
+    
     steps:
-      - name: 创建保存目录
-        run: mkdir -p /tmp/packages
-
-      - name: 清理apt缓存
-        run: sudo apt-get clean
-
-      - name: 更新apt源
-        run: sudo apt-get update -y
-
-      - name: 修复软件包依赖
-        run: sudo apt-get install -f
-
-      - name: 重置dpkg数据库
-        run: sudo dpkg --configure -a
-
-      - name: 下载指定软件包及其依赖（处理debconf-2.0错误）
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Node.js ${{ github.event.inputs.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ github.event.inputs.node-version }}
+          cache: 'yarn'
+      
+      - name: Install Yarn ${{ github.event.inputs.yarn-version }}
         run: |
-          # 尝试正常下载软件包及其依赖
-          apt-get -d install ${{ github.event.inputs.package_name }}
-          apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ ") || true
-          # 若出现debconf-2.0错误，使用修正命令
-          apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ " | sed 's/debconf-2.0/debconf/g') || true
-          # 若仍有问题，使用备用下载命令
-          for i in $(apt-cache depends ${{ github.event.inputs.package_name }}| grep -E 'Depends|Recommends|Suggests' | cut -d ':' -f 2,3 | sed -e s/'<'/''/ -e s/'>'/''/); do sudo apt-get download $i 2>>errors.txt; done || true
-
-      - name: 移动下载的软件包
-        run: sudo mv /var/cache/apt/archives/*.deb /tmp/packages
-
-      - name: 打包下载的软件包
+          npm install -g yarn@${{ github.event.inputs.yarn-version }}
+          yarn --version
+      
+      - name: Create package.json if not exists
         run: |
-          cd /tmp
-          tar -czvf packages.tar.gz packages
-
-      - name: 上传打包文件
+          if [ ! -f "package.json" ]; then
+            echo '{"name": "temp-project", "version": "1.0.0"}' > package.json
+          fi
+      
+      - name: Initialize project and create yarn.lock
+        run: |
+          yarn init -y
+          yarn install
+      
+      - name: Install global packages
+        if: github.event.inputs.packages != ''
+        run: |
+          IFS=',' read -ra PACKAGES <<< "${{ github.event.inputs.packages }}"
+          for pkg in "${PACKAGES[@]}"; do
+            yarn global add $pkg
+          done
+          yarn global list
+      
+      - name: Archive yarn cache directory
+        run: |
+          tar -czvf yarn-cache.tar.gz -C /home/runner/.cache/yarn/v6 .
+      
+      - name: Upload yarn cache archive
         uses: actions/upload-artifact@v4
         with:
-          name: offline-packages
-          path: /tmp/packages.tar.gz
+          name: yarn-cache-${{ github.event.inputs.node-version }}-${{ github.event.inputs.yarn-version }}
+          path: yarn-cache.tar.gz
+          retention-days: 7
 
-      - name: 安装下载的软件包（假设已将软件包传输到目标无网络环境）
-        run: |
-          # 模拟进入目标无网络环境的操作（实际需手动传输软件包）
-          cd /tmp/packages
-          sudo dpkg -i *.deb || true
-          # 处理可能的依赖问题
-          sudo apt-get install -f || true
+
