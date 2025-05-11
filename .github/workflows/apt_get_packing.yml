@@ -1,49 +1,35 @@
-name: Download Multiple Debian Packages
+name: Download APT Packages
 
 on:
   workflow_dispatch:
     inputs:
-      package_list:
-        description: 'Comma-separated list of Debian packages (e.g., curl,wget,git)'
+      packages:
+        description: '要下载的软件包列表，用空格分隔'
         required: true
+        default: 'curl wget git'
 
 jobs:
   download-packages:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: 创建下载目录
+        run: mkdir -p ~/apt-packages
 
-    - name: Update package list and install wget
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y wget
+      - name: 下载软件包
+        run: |
+          sudo apt-get update
+          sudo apt-get install --download-only ${{ github.event.inputs.packages }}
+          cp /var/cache/apt/archives/*.deb ~/apt-packages/
 
-    - name: Parse package list and download each package
-      run: |
-        mkdir -p ./downloaded_packages
-        IFS=',' read -ra PKG_LIST <<< "${{ github.event.inputs.package_list }}"
-        for pkg in "${PKG_LIST[@]}"; do
-          # Trim leading and trailing whitespace from the package name
-          trimmed_pkg=$(echo "$pkg" | xargs)
-          echo "Downloading latest version of $trimmed_pkg..."
-          apt-get download $(apt-cache madison $trimmed_pkg | head -n 1 | awk '{print $3}')
-        done
+      - name: 打包下载的软件包
+        run: |
+          cd ~
+          tar -czvf apt-packages.tar.gz apt-packages/
 
-    - name: Move downloaded files to the output directory
-      run: |
-        mv *.deb ./downloaded_packages/
-
-    - name: Archive the downloaded packages
-      run: |
-        cd downloaded_packages && tar -czvf ../downloaded_packages.tar.gz *
-
-    - name: Upload the archive as an artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: downloaded-packages-archive
-        path: downloaded_packages.tar.gz
-
-
-
+      - name: 上传打包文件
+        uses: actions/upload-artifact@v4
+        with:
+          name: apt-packages
+          path: ~/apt-packages.tar.gz
+          retention-days: 7    
