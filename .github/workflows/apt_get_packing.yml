@@ -13,7 +13,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Update package list and install wget
       run: |
@@ -40,7 +40,7 @@ jobs:
         cd downloaded_packages && tar -czvf ../downloaded_packages.tar.gz *
 
     - name: Upload the archive as an artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: downloaded-packages-archive
         path: downloaded_packages.tar.gz
