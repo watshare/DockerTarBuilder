@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       package_list:
-        description: 'Comma-separated list of Debian packages with versions (e.g., package1=version1,package2=version2)'
+        description: 'Comma-separated list of Debian packages (e.g., curl,wget,git)'
         required: true
 
 jobs:
@@ -25,11 +25,8 @@ jobs:
         mkdir -p ./downloaded_packages
         IFS=',' read -ra PKG_LIST <<< "${{ github.event.inputs.package_list }}"
         for pkg in "${PKG_LIST[@]}"; do
-          IFS='=' read -ra PKG_INFO <<< "$pkg"
-          PACKAGE_NAME="${PKG_INFO[0]}"
-          PACKAGE_VERSION="${PKG_INFO[1]}"
-          echo "Downloading $PACKAGE_NAME version $PACKAGE_VERSION..."
-          apt-get download $(apt-cache madison $PACKAGE_NAME | grep "$PACKAGE_VERSION" | awk '{print $3}')
+          echo "Downloading latest version of $pkg..."
+          apt-get download $(apt-cache madison $pkg | head -n 1 | awk '{print $3}')
         done
 
     - name: Move downloaded files to the output directory
