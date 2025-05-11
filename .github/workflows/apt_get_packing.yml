@@ -13,7 +13,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v3
 
     - name: Update package list and install wget
       run: |
@@ -25,8 +25,10 @@ jobs:
         mkdir -p ./downloaded_packages
         IFS=',' read -ra PKG_LIST <<< "${{ github.event.inputs.package_list }}"
         for pkg in "${PKG_LIST[@]}"; do
-          echo "Downloading latest version of $pkg..."
-          apt-get download $(apt-cache madison $pkg | head -n 1 | awk '{print $3}')
+          # Trim leading and trailing whitespace from the package name
+          trimmed_pkg=$(echo "$pkg" | xargs)
+          echo "Downloading latest version of $trimmed_pkg..."
+          apt-get download $(apt-cache madison $trimmed_pkg | head -n 1 | awk '{print $3}')
         done
 
     - name: Move downloaded files to the output directory
@@ -38,7 +40,7 @@ jobs:
         cd downloaded_packages && tar -czvf ../downloaded_packages.tar.gz *
 
     - name: Upload the archive as an artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v3
       with:
         name: downloaded-packages-archive
         path: downloaded_packages.tar.gz
