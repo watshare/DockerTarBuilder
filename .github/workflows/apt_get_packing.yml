@@ -1,4 +1,4 @@
-name: APT DEB  
+name: APT DEB Package Downloader (For Offline Use)
 
 on:
   workflow_dispatch:
@@ -67,7 +67,7 @@ jobs:
 
       - name: Upload Artifact
         if: fromJSON(steps.find_cache_and_copy.outputs.count) > 0
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: deb-packages
           path: ~/debs.tar.gz
