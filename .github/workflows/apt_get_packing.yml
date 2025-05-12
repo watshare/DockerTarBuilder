@@ -12,6 +12,9 @@ jobs:
   download_debs:
     runs-on: ubuntu-22.04
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Set up environment
         run: |
           sudo apt update
@@ -23,27 +26,33 @@ jobs:
           echo "Downloading packages: $PACKAGES"
           sudo apt install --download-only -y $PACKAGES
 
-      - name: Find downloaded .deb files
-        id: find_debs
+      - name: Find APT cache directory and copy .deb files
+        id: find_cache_and_copy
         run: |
-          # 默认 apt 下载路径
-          DEB_DIR="/var/cache/apt/archives"
+          # 查询APT缓存目录
+          APT_CACHE_DIR=$(apt-config shell APT_CACHE_DIR Dir::Cache)
+          APT_CACHE_DIR=${APT_CACHE_DIR#*=} # 去掉变量名
+          if [ -z "$APT_CACHE_DIR" ]; then
+            APT_CACHE_DIR="/var/cache/apt/archives"
+          fi
           
-          # 拷贝所有 .deb 到工作目录
-          cp "$DEB_DIR"/*.deb ~/debs/
-          
-          # 统计数量
-          count=$(ls ~/debs/*.deb | wc -l)
-          echo "Found $count .deb files"
-          echo "::set-output name=count::$count"
+          # 检查是否存在.deb文件
+          if ls "$APT_CACHE_DIR"/*.deb 1> /dev/null 2>&1; then
+            cp "$APT_CACHE_DIR"/*.deb ~/debs/
+            count=$(ls ~/debs/*.deb | wc -l)
+            echo "Found $count .deb files"
+            echo "::set-output name=count::$count"
+          else
+            echo "::set-output name=count::0"
+          fi
 
       - name: Archive .deb files
-        if: steps.find_debs.outputs.count > 0
+        if: steps.find_cache_and_copy.outputs.count > 0
         run: |
           cd ~/ && tar czf debs.tar.gz debs/
 
       - name: Upload Artifact
-        if: steps.find_debs.outputs.count > 0
+        if: steps.find_cache_and_copy.outputs.count > 0
         uses: actions/upload-artifact@v4
         with:
           name: deb-packages
