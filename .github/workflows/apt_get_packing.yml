@@ -1,4 +1,4 @@
-name: APT DEB Package Downloader
+name: APT DEB Package Downloader (For Offline Use)
 
 on:
   workflow_dispatch:
@@ -15,29 +15,42 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up environment
+      - name: Setup environment and cleanup old debs
         run: |
-          sudo apt update
+          sudo apt clean
+          rm -rf ~/debs ~/debs.tar.gz /tmp/debs.list || true
           mkdir -p ~/debs
 
-      - name: Download packages and dependencies
+      - name: Install apt-rdepends
+        run: |
+          sudo apt update
+          sudo apt install -y apt-rdepends
+
+      - name: Build dependency tree
         run: |
           PACKAGES="${{ github.event.inputs.packages }}"
-          echo "Downloading packages: $PACKAGES"
-          sudo apt install --download-only -y $PACKAGES
+          echo "Building dependency tree for: $PACKAGES"
+          
+          # 获取完整的依赖列表（包括推荐）
+          apt-rdepends --state-follow=Installed --state-show=NotInstalled $PACKAGES | grep -v "^Reverse" > /tmp/debs.list
+
+      - name: Download all missing packages
+        run: |
+          echo "Downloading .deb files..."
+          while read pkg; do
+            apt-get install --download-only -y "$pkg"
+          done < /tmp/debs.list
 
       - name: Find APT cache directory and copy .deb files
         id: find_cache_and_copy
         run: |
-          # 查询APT缓存目录
-          APT_CACHE_DIR=$(apt-config shell APT_CACHE_DIR Dir::Cache)
-          APT_CACHE_DIR=${APT_CACHE_DIR#*=} # 去掉变量名
+          APT_CACHE_DIR=$(apt-config shell Dir::Cache/apt Dir)
+          APT_CACHE_DIR=${APT_CACHE_DIR#*=}
           if [ -z "$APT_CACHE_DIR" ]; then
             APT_CACHE_DIR="/var/cache/apt/archives"
           fi
-          
-          # 检查是否存在.deb文件并计算数量
-          if ls "$APT_CACHE_DIR"/*.deb 1> /dev/null 2>&1; then
+
+          if ls "$APT_CACHE_DIR"/*.deb 1>/dev/null 2>&1; then
             cp "$APT_CACHE_DIR"/*.deb ~/debs/
             count=$(ls ~/debs/*.deb | wc -l)
             echo "Found $count .deb files"
