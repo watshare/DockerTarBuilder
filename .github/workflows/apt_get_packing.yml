@@ -1,4 +1,4 @@
-name: APT DEB Package Downloader (For Offline Use)
+name: APT DEB  
 
 on:
   workflow_dispatch:
@@ -31,14 +31,15 @@ jobs:
           PACKAGES="${{ github.event.inputs.packages }}"
           echo "Building dependency tree for: $PACKAGES"
           
-          # 获取完整的依赖列表（包括推荐）
+          # 获取完整的依赖列表（只包含未安装的包）
           apt-rdepends --state-follow=Installed --state-show=NotInstalled $PACKAGES | grep -v "^Reverse" > /tmp/debs.list
 
       - name: Download all missing packages
         run: |
           echo "Downloading .deb files..."
           while read pkg; do
-            apt-get install --download-only -y "$pkg"
+            echo "Downloading package: $pkg"
+            sudo apt-get install --download-only -y "$pkg"
           done < /tmp/debs.list
 
       - name: Find APT cache directory and copy .deb files
@@ -51,7 +52,7 @@ jobs:
           fi
 
           if ls "$APT_CACHE_DIR"/*.deb 1>/dev/null 2>&1; then
-            cp "$APT_CACHE_DIR"/*.deb ~/debs/
+            sudo cp "$APT_CACHE_DIR"/*.deb ~/debs/
             count=$(ls ~/debs/*.deb | wc -l)
             echo "Found $count .deb files"
             echo "count=$count" >> $GITHUB_OUTPUT
@@ -66,7 +67,7 @@ jobs:
 
       - name: Upload Artifact
         if: fromJSON(steps.find_cache_and_copy.outputs.count) > 0
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: deb-packages
           path: ~/debs.tar.gz
