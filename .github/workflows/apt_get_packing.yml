@@ -19,6 +19,8 @@ jobs:
       run: |
         mkdir -p ~/debs/
         echo "DEBS_DIR=~/debs/" >> $GITHUB_ENV
+        mkdir -p /tmp/apt-downloads/
+        echo "APT_DOWNLOADS_DIR=/tmp/apt-downloads/" >> $GITHUB_ENV
 
     - name: Create debs.list file from input
       run: |
@@ -31,7 +33,7 @@ jobs:
           if [[ "$pkg" =~ ^[a-zA-Z0-9\.\+\-]+$ ]]; then  # 确保是合法的包名
             echo "Downloading package: $pkg"
             sudo apt-get update
-            sudo apt-get download "$pkg"
+            sudo apt-get download -o dir::cache="$APT_DOWNLOADS_DIR" "$pkg"
           else
             echo "Skipping invalid package name: $pkg"
           fi
@@ -39,14 +41,8 @@ jobs:
 
     - name: Move downloaded .deb files to DEBS_DIR
       run: |
-        APT_CACHE_DIR=$(sudo apt-config shell Dir::Cache/apt Dir)
-        APT_CACHE_DIR=${APT_CACHE_DIR#*=}
-        if [ -z "$APT_CACHE_DIR" ]; then
-          APT_CACHE_DIR="/var/cache/apt/archives"
-        fi
-
-        if ls "$APT_CACHE_DIR"/*.deb 1>/dev/null 2>&1; then
-          sudo cp "$APT_CACHE_DIR"/*.deb "$DEBS_DIR/"
+        if ls "$APT_DOWNLOADS_DIR"/*.deb 1>/dev/null 2>&1; then
+          sudo cp "$APT_DOWNLOADS_DIR"/*.deb "$DEBS_DIR/"
           count=$(ls "$DEBS_DIR"/*.deb | wc -l)
           echo "Found $count .deb files"
           echo "count=$count" >> $GITHUB_OUTPUT
