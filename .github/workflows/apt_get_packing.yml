@@ -36,24 +36,24 @@ jobs:
             APT_CACHE_DIR="/var/cache/apt/archives"
           fi
           
-          # 检查是否存在.deb文件
+          # 检查是否存在.deb文件并计算数量
           if ls "$APT_CACHE_DIR"/*.deb 1> /dev/null 2>&1; then
             cp "$APT_CACHE_DIR"/*.deb ~/debs/
             count=$(ls ~/debs/*.deb | wc -l)
             echo "Found $count .deb files"
-            echo "::set-output name=count::$count"
+            echo "count=$count" >> $GITHUB_OUTPUT
           else
-            echo "::set-output name=count::0"
+            echo "count=0" >> $GITHUB_OUTPUT
           fi
 
       - name: Archive .deb files
-        if: steps.find_cache_and_copy.outputs.count > 0
+        if: fromJSON(steps.find_cache_and_copy.outputs.count) > 0
         run: |
           cd ~/ && tar czf debs.tar.gz debs/
 
       - name: Upload Artifact
-        if: steps.find_cache_and_copy.outputs.count > 0
-        uses: actions/upload-artifact@v4
+        if: fromJSON(steps.find_cache_and_copy.outputs.count) > 0
+        uses: actions/upload-artifact@v3
         with:
           name: deb-packages
           path: ~/debs.tar.gz
