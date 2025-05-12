@@ -23,6 +23,11 @@ jobs:
         run: |
           sudo apt-get update
 
+      - name: 清理 APT 缓存
+        run: |
+          sudo rm -rf /var/cache/apt/archives/*.deb
+          sudo apt-get clean
+
       - name: 下载插件包及其依赖（包括递归依赖）
         env:
           PLUGIN_LIST: ${{ github.event.inputs.plugins }}
@@ -40,6 +45,12 @@ jobs:
               continue
             fi
           done
+
+          # 确保下载成功
+          if ! ls /var/cache/apt/archives/*.deb 1>/dev/null 2>&1; then
+            echo "Error: No .deb files were downloaded." >&2
+            exit 1  # 如果没有文件则终止运行
+          fi
 
           # 将下载的包移动到指定目录
           sudo mv /var/cache/apt/archives/*.deb "$DOWNLOAD_DIR/" || echo "No .deb files to move."
