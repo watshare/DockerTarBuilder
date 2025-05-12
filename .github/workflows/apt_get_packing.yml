@@ -22,10 +22,10 @@ jobs:
     steps:
       - name: 清理并准备环境
         run: |
-          sudo -i
-          apt-get clean
-          rm -rf /var/lib/apt/lists/*
-          mkdir -p /tmp/deb-packages
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+          sudo mkdir -p /tmp/deb-packages
+        shell: bash
 
       - name: 添加自定义软件源(如有)
         if: github.event.inputs.repository_url != ''
@@ -35,9 +35,11 @@ jobs:
             wget -qO - ${{ github.event.inputs.gpg_key }} | sudo gpg --dearmor -o /usr/share/keyrings/custom-archive-keyring.gpg
           fi
           sudo apt-get update
+        shell: bash
 
       - name: 更新包列表
         run: sudo apt-get update
+        shell: bash
 
       - name: 下载deb包及其依赖
         run: |
@@ -48,16 +50,16 @@ jobs:
           sudo apt-get install -y --download-only $PACKAGE
           
           # 查找下载的deb文件
-          DEB_FILES=$(find /var/cache/apt/archives -name "*.deb" -type f)
+          DEB_FILES=$(sudo find /var/cache/apt/archives -name "*.deb" -type f)
           
           # 复制到临时目录
           for file in $DEB_FILES; do
-            cp "$file" /tmp/deb-packages/
+            sudo cp "$file" /tmp/deb-packages/
           done
           
           # 创建tar包
           cd /tmp
-          tar -czvf deb-packages.tar.gz deb-packages/
+          sudo tar -czvf deb-packages.tar.gz deb-packages/
           
           # 计算文件哈希
           SHA256=$(sha256sum deb-packages.tar.gz | awk '{print $1}')
@@ -65,12 +67,14 @@ jobs:
           # 输出信息供后续步骤使用
           echo "deb_files=$DEB_FILES" >> $GITHUB_ENV
           echo "sha256=$SHA256" >> $GITHUB_ENV
+        shell: bash
 
       - name: 显示下载信息
         run: |
           echo "成功下载以下deb包:"
           echo "$deb_files"
           echo "包文件哈希(SHA256): $sha256"
+        shell: bash
 
       - name: 上传为构建产物
         uses: actions/upload-artifact@v4
@@ -85,10 +89,12 @@ jobs:
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/suites/${{ github.run_id }}/artifacts/${{ github.run_number }}"
           echo "download_url=$DOWNLOAD_URL" >> $GITHUB_ENV
           echo "::set-output name=url::$DOWNLOAD_URL"
+        shell: bash
 
       - name: 打印下载链接
         run: |
           echo "========================================="
           echo "下载链接: ${{ env.download_url }}"
           echo "包文件哈希(SHA256): ${{ env.sha256 }}"
-          echo "========================================="    
+          echo "========================================="
+        shell: bash    
