@@ -31,15 +31,19 @@ jobs:
           PACKAGES="${{ github.event.inputs.packages }}"
           echo "Building dependency tree for: $PACKAGES"
           
-          # 获取完整的依赖列表（只包含未安装的包）
-          apt-rdepends --state-follow=Installed --state-show=NotInstalled $PACKAGES | grep -v "^Reverse" > /tmp/debs.list
+          # 获取完整的依赖列表（包括推荐）
+          apt-rdepends --state-follow=Installed --state-show=NotInstalled $PACKAGES | grep -v "^Reverse" | awk '{print $1}' > /tmp/debs.list
 
       - name: Download all missing packages
         run: |
           echo "Downloading .deb files..."
           while read pkg; do
-            echo "Downloading package: $pkg"
-            sudo apt-get install --download-only -y "$pkg"
+            if [[ "$pkg" =~ ^[a-zA-Z0-9\.\+\-]+$ ]]; then  # 确保是合法的包名
+              echo "Downloading package: $pkg"
+              sudo apt-get install --download-only -y "$pkg"
+            else
+              echo "Skipping invalid package name: $pkg"
+            fi
           done < /tmp/debs.list
 
       - name: Find APT cache directory and copy .deb files
