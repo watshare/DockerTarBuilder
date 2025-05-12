@@ -57,6 +57,13 @@ jobs:
           sudo apt-get install -y apt-rdepends
           echo "apt-rdepends installed."
 
+      - name: 配置APT下载目录
+        run: |
+          echo "Configuring APT download directory..."
+          echo 'Dir::Cache::Archives "/tmp/packages";' | sudo tee /etc/apt/apt.conf.d/99custom-download-dir
+          sudo chmod 644 /etc/apt/apt.conf.d/99custom-download-dir
+          echo "APT download directory configured to /tmp/packages"
+
       - name: 下载指定软件包及其依赖（处理debconf-2.0错误）
         run: |
           echo "Downloading specified package and its dependencies..."
@@ -77,7 +84,7 @@ jobs:
           done
 
           echo "Printing download URLs for all .deb files..."
-          for deb_file in /var/cache/apt/archives/*.deb; do
+          for deb_file in /tmp/packages/*.deb; do
             if [ -f "$deb_file" ]; then
               pkg_name=$(dpkg-deb -f "$deb_file" Package)
               pkg_version=$(dpkg-deb -f "$deb_file" Version)
@@ -89,22 +96,16 @@ jobs:
           done
 
           echo "Download process completed. Checking downloaded files..."
-          ls -l /var/cache/apt/archives/
+          ls -l /tmp/packages/
 
       - name: 确保存在下载的软件包
         run: |
           echo "Verifying downloaded packages..."
-          if [ ! "$(ls -A /var/cache/apt/archives/*.deb 2>/dev/null)" ]; then
+          if [ ! "$(ls -A /tmp/packages/*.deb 2>/dev/null)" ]; then
             echo "No .deb files were downloaded. Please check the package name or download commands.";
             exit 1;
           fi
           echo "Packages downloaded successfully."
-
-      - name: 移动下载的软件包
-        run: |
-          echo "Moving downloaded .deb files to /tmp/packages..."
-          sudo mv /var/cache/apt/archives/*.deb /tmp/packages
-          echo "Downloaded files moved to /tmp/packages."
 
       - name: 打包下载的软件包
         run: |
@@ -132,4 +133,5 @@ jobs:
         run: |
           echo "Removing sudo privileges for runner..."
           sudo rm /etc/sudoers.d/runner
+          sudo rm /etc/apt/apt.conf.d/99custom-download-dir
           echo "Sudo privileges removed."
