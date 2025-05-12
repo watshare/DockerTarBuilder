@@ -1,131 +1,50 @@
-name: ubuntu apt download
+name: APT DEB Package Downloader
 
 on:
   workflow_dispatch:
     inputs:
-      package_name:
-        description: '软件包名称（可用于安装bind9和dnsutils等）'
-        required: true
+      packages:
         type: string
+        description: 'Space-separated list of packages to download (e.g., curl gnupg2 ca-certificates lsb-release)'
+        required: true
 
 jobs:
-  download-packages:
+  download_debs:
     runs-on: ubuntu-22.04
-
     steps:
-      - name: 添加用户到sudoers组并赋予权限
+      - name: Set up environment
         run: |
-          echo "Adding runner to sudoers group..."
-          echo "runner ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/runner
-          sudo chmod 0440 /etc/sudoers.d/runner
-          echo "Sudoers group updated."
+          sudo apt update
+          mkdir -p ~/debs
 
-      - name: 创建保存目录
+      - name: Download packages and dependencies
         run: |
-          echo "Creating directory for packages..."
-          sudo mkdir -p /tmp/packages
-          sudo chmod 777 /tmp/packages
-          echo "Directory /tmp/packages created."
+          PACKAGES="${{ github.event.inputs.packages }}"
+          echo "Downloading packages: $PACKAGES"
+          sudo apt install --download-only -y $PACKAGES
 
-      - name: 清理apt缓存
+      - name: Find downloaded .deb files
+        id: find_debs
         run: |
-          echo "Cleaning apt cache..."
-          sudo apt-get clean
-          echo "Apt cache cleaned."
-
-      - name: 更新apt源
-        run: |
-          echo "Updating apt package lists..."
-          sudo apt-get update -y
-          echo "Apt package lists updated."
-
-      - name: 修复软件包依赖
-        run: |
-          echo "Fixing package dependencies..."
-          sudo apt-get install -f
-          echo "Dependencies fixed."
-
-      - name: 重置dpkg数据库
-        run: |
-          echo "Resetting dpkg database..."
-          sudo dpkg --configure -a
-          echo "dpkg database reset."
-
-      - name: 安装apt-rdepends
-        run: |
-          echo "Installing apt-rdepends for dependency resolution..."
-          sudo apt-get install -y apt-rdepends
-          echo "apt-rdepends installed."
-
-      - name: 配置apt下载目录
-        run: |
-          echo "Configuring apt download directory..."
-          echo 'Dir::Cache::Archives "/tmp/packages";' | sudo tee /etc/apt/apt.conf.d/90custom-download-dir
-          sudo chmod 644 /etc/apt/apt.conf.d/90custom-download-dir
-          echo "Apt download directory configured."
-
-      - name: 下载指定软件包及其依赖
-        run: |
-          echo "Downloading specified package and its dependencies..."
-          PACKAGE="${{ github.event.inputs.package_name }}"
+          # 默认 apt 下载路径
+          DEB_DIR="/var/cache/apt/archives"
           
-          # 尝试使用apt-get -d下载主包及其依赖
-          echo "Downloading package: $PACKAGE"
-          sudo apt-get -d install $PACKAGE || true
+          # 拷贝所有 .deb 到工作目录
+          cp "$DEB_DIR"/*.deb ~/debs/
           
-          # 使用apt-rdepends解析依赖并下载
-          echo "Resolving dependencies using apt-rdepends..."
-          # 排除虚拟包和不存在的包
-          apt-rdepends $PACKAGE | grep -v "^ " | grep -v "<" | while read -r dep; do
-            dep_name=$(echo $dep | awk '{print $1}')
-            echo "Checking dependency: $dep_name"
-            
-            # 检查包是否存在于源中
-            if apt-cache show $dep_name >/dev/null 2>&1; then
-              echo "Downloading dependency: $dep_name"
-              sudo apt-get download $dep_name || true
-            else
-              echo "Skipping non-existent dependency: $dep_name"
-            fi
-          done
-          
-          echo "Download process completed. Checking downloaded files..."
-          ls -l /tmp/packages/
+          # 统计数量
+          count=$(ls ~/debs/*.deb | wc -l)
+          echo "Found $count .deb files"
+          echo "::set-output name=count::$count"
 
-      - name: 确保存在下载的软件包
+      - name: Archive .deb files
+        if: steps.find_debs.outputs.count > 0
         run: |
-          echo "Verifying downloaded packages..."
-          if [ ! "$(ls -A /tmp/packages/*.deb 2>/dev/null)" ]; then
-            echo "No .deb files were downloaded. Please check the package name or download commands.";
-            exit 1;
-          fi
-          echo "Packages downloaded successfully."
+          cd ~/ && tar czf debs.tar.gz debs/
 
-      - name: 打包下载的软件包
-        run: |
-          echo "Compressing downloaded packages into a tarball..."
-          cd /tmp
-          tar -czvf packages.tar.gz packages
-          echo "Tarball created at /tmp/packages.tar.gz."
-
-      - name: 上传打包文件
+      - name: Upload Artifact
+        if: steps.find_debs.outputs.count > 0
         uses: actions/upload-artifact@v4
         with:
-          name: offline-packages
-          path: /tmp/packages.tar.gz
-
-      - name: 安装下载的软件包（假设已将软件包传输到目标无网络环境）
-        run: |
-          echo "Installing downloaded packages in an offline environment..."
-          cd /tmp/packages
-          sudo dpkg -i *.deb || true
-          echo "Resolving dependencies in offline environment..."
-          sudo apt-get install -f || true
-          echo "Packages installed."
-
-      - name: 移除sudo权限
-        run: |
-          echo "Removing sudo privileges for runner..."
-          sudo rm /etc/sudoers.d/runner
-          sudo rm /etc/apt/apt.conf.d/90custom-download-dir
-          echo "Sudo privileges removed."
+          name: deb-packages
+          path: ~/debs.tar.gz
