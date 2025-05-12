@@ -17,27 +17,28 @@ jobs:
         run: |
           # 创建专用目录结构
           mkdir -p /opt/deb-workspace/{downloads,packages}
-          chmod 777 /opt/deb-workspace  # 确保有足够权限
+          sudo chmod 777 /opt/deb-workspace  # 确保有足够权限
 
-      - name: 切换到root用户并更新包索引
+      - name: 更新包索引
         run: |
-          echo "${{ secrets.ROOT_PASSWORD }}" | sudo -S -i
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update
+          sudo apt-get update
 
-      - name: 下载插件包及其依赖
+      - name: 下载插件包及其依赖（不安装）
         env:
           PLUGIN_LIST: ${{ github.event.inputs.plugins }}
           DOWNLOAD_DIR: /opt/deb-workspace/downloads
         run: |
           # 创建下载目录
-          mkdir -p "$DOWNLOAD_DIR"
-          
-          # 使用apt-get下载DEB包及其依赖，不安装
-          echo "${{ secrets.ROOT_PASSWORD }}" | sudo -S apt-get download $(echo $PLUGIN_LIST | tr ' ' '\n')
-          
-          # 移动下载的DEB包到指定目录
-          mv *.deb "$DOWNLOAD_DIR"/
+          sudo mkdir -p "$DOWNLOAD_DIR"
+
+          # 使用 apt-get download 下载指定插件包
+          for plugin in $PLUGIN_LIST; do
+            echo "Downloading $plugin ..."
+            sudo apt-get download "$plugin" || { echo "Failed to download $plugin"; exit 1; }
+          done
+
+          # 确保下载的包保存到指定目录
+          sudo mv *.deb "$DOWNLOAD_DIR/"
 
       - name: 验证文件完整性
         run: |
@@ -55,7 +56,7 @@ jobs:
 
       - name: 清理临时文件
         run: |
-          rm -rf /opt/deb-workspace/downloads/*
+          sudo rm -rf /opt/deb-workspace/downloads/*
 
       - name: 下载链接生成
         uses: actions/upload-artifact@v4
@@ -63,4 +64,3 @@ jobs:
           name: deb-packages-$(date +%Y%m%d%H%M)
           path: /opt/deb-workspace/packages.tar.gz
           retention-days: 7  # 保留7天下载记录
-    
