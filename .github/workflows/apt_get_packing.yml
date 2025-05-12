@@ -1,100 +1,66 @@
-name: Download Custom Deb Package
+name: DEB插件批量下载与打包
 
 on:
   workflow_dispatch:
     inputs:
-      package_name:
-        description: '要下载的deb包名称(例如: firefox)'
+      plugins:
+        description: '以空格分隔的插件名称列表（例如：nginx mysql redis）'
         required: true
-        default: 'firefox'
-      repository_url:
-        description: '可选: 指定软件源URL'
-        required: false
-        default: ''
-      gpg_key:
-        description: '可选: 指定GPG密钥URL'
-        required: false
-        default: ''
+        default: 'nginx mysql'
 
 jobs:
-  download:
+  deb-package-manager:
     runs-on: ubuntu-22.04
+    concurrency: self-hosted  # 防止并发冲突
     steps:
-      - name: 清理并准备环境
+      - name: 初始化工作环境
         run: |
-          sudo apt-get clean
-          sudo rm -rf /var/lib/apt/lists/*
-          sudo mkdir -p /tmp/deb-packages
-        shell: bash
+          # 创建专用目录结构
+          mkdir -p /opt/deb-workspace/{downloads,packages}
+          chmod 777 /opt/deb-workspace  # 确保有足够权限
 
-      - name: 添加自定义软件源(如有)
-        if: github.event.inputs.repository_url != ''
+      - name: 切换到root用户并更新包索引
         run: |
-          echo "deb ${{ github.event.inputs.repository_url }} $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/custom.list
-          if [ "${{ github.event.inputs.gpg_key }}" != "" ]; then
-            wget -qO - ${{ github.event.inputs.gpg_key }} | sudo gpg --dearmor -o /usr/share/keyrings/custom-archive-keyring.gpg
-          fi
-          sudo apt-get update
-        shell: bash
+          echo "${{ secrets.ROOT_PASSWORD }}" | sudo -S -i
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
 
-      - name: 更新包列表
-        run: sudo apt-get update
-        shell: bash
-
-      - name: 下载deb包及其依赖
+      - name: 下载插件包及其依赖
+        env:
+          PLUGIN_LIST: ${{ github.event.inputs.plugins }}
+          DOWNLOAD_DIR: /opt/deb-workspace/downloads
         run: |
-          PACKAGE="${{ github.event.inputs.package_name }}"
-          echo "准备下载包: $PACKAGE"
+          # 创建下载目录
+          mkdir -p "$DOWNLOAD_DIR"
           
-          # 下载包及其依赖
-          sudo apt-get install -y --download-only $PACKAGE
+          # 使用apt-get下载DEB包及其依赖，不安装
+          echo "${{ secrets.ROOT_PASSWORD }}" | sudo -S apt-get download $(echo $PLUGIN_LIST | tr ' ' '\n')
           
-          # 查找下载的deb文件
-          DEB_FILES=$(sudo find /var/cache/apt/archives -name "*.deb" -type f)
-          
-          # 复制到临时目录
-          for file in $DEB_FILES; do
-            sudo cp "$file" /tmp/deb-packages/
+          # 移动下载的DEB包到指定目录
+          mv *.deb "$DOWNLOAD_DIR"/
+
+      - name: 验证文件完整性
+        run: |
+          cd /opt/deb-workspace/downloads
+          for deb in *.deb; do
+            echo "验证 $deb ..."
+            dpkg-deb -I "$deb" > /dev/null || exit 1
           done
-          
-          # 创建tar包
-          cd /tmp
-          sudo tar -czvf deb-packages.tar.gz deb-packages/
-          
-          # 计算文件哈希
-          SHA256=$(sha256sum deb-packages.tar.gz | awk '{print $1}')
-          
-          # 输出信息供后续步骤使用
-          echo "deb_files=$DEB_FILES" >> $GITHUB_ENV
-          echo "sha256=$SHA256" >> $GITHUB_ENV
-        shell: bash
 
-      - name: 显示下载信息
+      - name: 创建安装包集合
         run: |
-          echo "成功下载以下deb包:"
-          echo "$deb_files"
-          echo "包文件哈希(SHA256): $sha256"
-        shell: bash
+          cd /opt/deb-workspace
+          tar -czvf packages.tar.gz downloads/*.deb
+          echo "打包完成：packages.tar.gz"
 
-      - name: 上传为构建产物
+      - name: 清理临时文件
+        run: |
+          rm -rf /opt/deb-workspace/downloads/*
+
+      - name: 下载链接生成
         uses: actions/upload-artifact@v4
         with:
-          name: deb-packages
-          path: /tmp/deb-packages.tar.gz
-          retention-days: 7
-
-      - name: 生成下载链接
-        id: generate_url
-        run: |
-          DOWNLOAD_URL="https://github.com/${{ github.repository }}/suites/${{ github.run_id }}/artifacts/${{ github.run_number }}"
-          echo "download_url=$DOWNLOAD_URL" >> $GITHUB_ENV
-          echo "::set-output name=url::$DOWNLOAD_URL"
-        shell: bash
-
-      - name: 打印下载链接
-        run: |
-          echo "========================================="
-          echo "下载链接: ${{ env.download_url }}"
-          echo "包文件哈希(SHA256): ${{ env.sha256 }}"
-          echo "========================================="
-        shell: bash    
+          name: deb-packages-$(date +%Y%m%d%H%M)
+          path: /opt/deb-workspace/packages.tar.gz
+          retention-days: 7  # 保留7天下载记录
+    
