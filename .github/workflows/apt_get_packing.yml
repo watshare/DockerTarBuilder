@@ -1,4 +1,4 @@
-name: Offline Package Download and DNS Setup
+name: ubuntu apt download
 
 on:
   workflow_dispatch:
@@ -57,42 +57,49 @@ jobs:
           sudo apt-get install -y apt-rdepends
           echo "apt-rdepends installed."
 
-      - name: 下载指定软件包及其依赖（处理debconf-2.0错误）
+      - name: 配置apt下载目录
+        run: |
+          echo "Configuring apt download directory..."
+          echo 'Dir::Cache::Archives "/tmp/packages";' | sudo tee /etc/apt/apt.conf.d/90custom-download-dir
+          sudo chmod 644 /etc/apt/apt.conf.d/90custom-download-dir
+          echo "Apt download directory configured."
+
+      - name: 下载指定软件包及其依赖
         run: |
           echo "Downloading specified package and its dependencies..."
-
-          echo "Downloading package: ${{ github.event.inputs.package_name }}"
-          sudo apt-get -d install ${{ github.event.inputs.package_name }} || true
-
+          PACKAGE="${{ github.event.inputs.package_name }}"
+          
+          # 尝试使用apt-get -d下载主包及其依赖
+          echo "Downloading package: $PACKAGE"
+          sudo apt-get -d install $PACKAGE || true
+          
+          # 使用apt-rdepends解析依赖并下载
           echo "Resolving dependencies using apt-rdepends..."
-          sudo apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ ") || true
-
-          echo "Handling debconf-2.0 error if any..."
-          sudo apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ " | sed 's/debconf-2.0/debconf/g') || true
-
-          echo "Using fallback method for downloading dependencies..."
-          for i in $(sudo apt-cache depends ${{ github.event.inputs.package_name }} | grep -E 'Depends|Recommends|Suggests' | cut -d ':' -f 2,3 | sed -e s/'<'/''/ -e s/'>'/''/); do
-            echo "Downloading dependency: $i"
-            sudo apt-get download $i || true
+          # 排除虚拟包和不存在的包
+          apt-rdepends $PACKAGE | grep -v "^ " | grep -v "<" | while read -r dep; do
+            dep_name=$(echo $dep | awk '{print $1}')
+            echo "Checking dependency: $dep_name"
+            
+            # 检查包是否存在于源中
+            if apt-cache show $dep_name >/dev/null 2>&1; then
+              echo "Downloading dependency: $dep_name"
+              sudo apt-get download $dep_name || true
+            else
+              echo "Skipping non-existent dependency: $dep_name"
+            fi
           done
-
+          
           echo "Download process completed. Checking downloaded files..."
-          ls -l /var/cache/apt/archives/
+          ls -l /tmp/packages/
 
       - name: 确保存在下载的软件包
         run: |
           echo "Verifying downloaded packages..."
-          if [ ! "$(ls -A /var/cache/apt/archives/*.deb 2>/dev/null)" ]; then
+          if [ ! "$(ls -A /tmp/packages/*.deb 2>/dev/null)" ]; then
             echo "No .deb files were downloaded. Please check the package name or download commands.";
             exit 1;
           fi
           echo "Packages downloaded successfully."
-
-      - name: 移动下载的软件包
-        run: |
-          echo "Moving downloaded .deb files to /tmp/packages..."
-          sudo mv /var/cache/apt/archives/*.deb /tmp/packages
-          echo "Downloaded files moved to /tmp/packages."
 
       - name: 打包下载的软件包
         run: |
@@ -120,4 +127,5 @@ jobs:
         run: |
           echo "Removing sudo privileges for runner..."
           sudo rm /etc/sudoers.d/runner
+          sudo rm /etc/apt/apt.conf.d/90custom-download-dir
           echo "Sudo privileges removed."
