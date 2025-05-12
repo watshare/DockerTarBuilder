@@ -17,8 +17,8 @@ jobs:
 
     - name: Set up environment
       run: |
-        mkdir -p ~/debs/
-        echo "DEBS_DIR=~/debs/" >> $GITHUB_ENV
+        mkdir -p /root/debs/
+        echo "DEBS_DIR=/root/debs/" >> $GITHUB_ENV
         mkdir -p /tmp/apt-downloads/
         echo "APT_DOWNLOADS_DIR=/tmp/apt-downloads/" >> $GITHUB_ENV
 
@@ -26,7 +26,7 @@ jobs:
       run: |
         echo "${{ github.event.inputs.packages }}" | tr ' ' '\n' > /tmp/debs.list
 
-    - name: Download .deb files
+    - name: Download .deb files as root
       run: |
         echo "Downloading .deb files..."
         while read pkg; do
@@ -38,8 +38,9 @@ jobs:
             echo "Skipping invalid package name: $pkg"
           fi
         done < /tmp/debs.list
+      shell: bash
 
-    - name: Move downloaded .deb files to DEBS_DIR
+    - name: Move downloaded .deb files to DEBS_DIR as root
       run: |
         if ls "$APT_DOWNLOADS_DIR"/*.deb 1>/dev/null 2>&1; then
           sudo cp "$APT_DOWNLOADS_DIR"/*.deb "$DEBS_DIR/"
@@ -49,6 +50,7 @@ jobs:
         else
           echo "count=0" >> $GITHUB_OUTPUT
         fi
+      shell: bash
 
     - name: Upload .deb files as artifact
       uses: actions/upload-artifact@v4
