@@ -1,4 +1,4 @@
-name: Python Plugin Packager
+name: ubuntu-latest Python Plugin download 
 
 on:
   workflow_dispatch:
