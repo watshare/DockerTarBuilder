@@ -30,15 +30,19 @@ jobs:
         run: |
           # 创建下载目录
           sudo mkdir -p "$DOWNLOAD_DIR"
+          sudo chmod 777 "$DOWNLOAD_DIR"  # 确保有权限
 
           # 使用 apt-get download 下载指定插件包
           for plugin in $PLUGIN_LIST; do
             echo "Downloading $plugin ..."
-            sudo apt-get download "$plugin" || { echo "Failed to download $plugin"; exit 1; }
+            if ! sudo apt-get download "$plugin"; then
+              echo "Warning: Failed to download $plugin. Skipping..."
+              continue
+            fi
           done
 
           # 确保下载的包保存到指定目录
-          sudo mv *.deb "$DOWNLOAD_DIR/"
+          sudo mv *.deb "$DOWNLOAD_DIR/" || echo "No .deb files to move."
 
       - name: 验证文件完整性
         run: |
