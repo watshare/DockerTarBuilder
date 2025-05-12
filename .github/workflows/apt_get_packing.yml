@@ -19,21 +19,33 @@ jobs:
       run: |
         mkdir -p ~/debs/
         echo "DEBS_DIR=~/debs/" >> $GITHUB_ENV
-        mkdir -p /tmp/apt-downloads/
-        echo "APT_DOWNLOADS_DIR=/tmp/apt-downloads/" >> $GITHUB_ENV
+        mkdir -p ~/apt-downloads/
+        echo "APT_DOWNLOADS_DIR=~/apt-downloads/" >> $GITHUB_ENV
+        touch ~/debs/downloaded_urls.txt
+        echo "URL_FILE=~/debs/downloaded_urls.txt" >> $GITHUB_ENV
 
     - name: Create debs.list file from input
       run: |
         echo "${{ github.event.inputs.packages }}" | tr ' ' '\n' > /tmp/debs.list
 
-    - name: Download .deb files
+    - name: Update package lists
+      run: apt-get update
+
+    - name: Download .deb files and record URLs
       run: |
         echo "Downloading .deb files..."
         while read pkg; do
           if [[ "$pkg" =~ ^[a-zA-Z0-9\.\+\-]+$ ]]; then  # 确保是合法的包名
             echo "Downloading package: $pkg"
-            sudo apt-get update
-            sudo apt-get download -o dir::cache="$APT_DOWNLOADS_DIR" "$pkg"
+            url=$(apt-cache show "$pkg" | grep Filename | awk '{print $2}')
+            if [ -n "$url" ]; then
+              full_url="http://archive.ubuntu.com/ubuntu/$url"
+              wget -O "$APT_DOWNLOADS_DIR/${pkg}_$(date +%Y%m%d%H%M%S).deb" "$full_url"
+              echo "$pkg: $full_url" >> "$URL_FILE"
+              echo "Downloaded $pkg from $full_url"
+            else
+              echo "Could not find URL for package: $pkg"
+            fi
           else
             echo "Skipping invalid package name: $pkg"
           fi
@@ -42,7 +54,7 @@ jobs:
     - name: Move downloaded .deb files to DEBS_DIR
       run: |
         if ls "$APT_DOWNLOADS_DIR"/*.deb 1>/dev/null 2>&1; then
-          sudo cp "$APT_DOWNLOADS_DIR"/*.deb "$DEBS_DIR/"
+          cp "$APT_DOWNLOADS_DIR"/*.deb "$DEBS_DIR/"
           count=$(ls "$DEBS_DIR"/*.deb | wc -l)
           echo "Found $count .deb files"
           echo "count=$count" >> $GITHUB_OUTPUT
@@ -50,7 +62,7 @@ jobs:
           echo "count=0" >> $GITHUB_OUTPUT
         fi
 
-    - name: Upload .deb files as artifact
+    - name: Upload .deb files and URLs as artifact
       uses: actions/upload-artifact@v4
       with:
         name: deb-packages
