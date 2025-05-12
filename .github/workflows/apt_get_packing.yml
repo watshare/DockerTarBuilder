@@ -19,8 +19,8 @@ jobs:
       run: |
         mkdir -p ~/debs/
         echo "DEBS_DIR=~/debs/" >> $GITHUB_ENV
-        mkdir -p ~/apt-downloads/
-        echo "APT_DOWNLOADS_DIR=~/apt-downloads/" >> $GITHUB_ENV
+        mkdir -p /tmp/apt-downloads/
+        echo "APT_DOWNLOADS_DIR=/tmp/apt-downloads/" >> $GITHUB_ENV
         touch ~/debs/downloaded_urls.txt
         echo "URL_FILE=~/debs/downloaded_urls.txt" >> $GITHUB_ENV
 
@@ -29,7 +29,7 @@ jobs:
         echo "${{ github.event.inputs.packages }}" | tr ' ' '\n' > /tmp/debs.list
 
     - name: Update package lists
-      run: apt-get update
+      run: sudo apt-get update
 
     - name: Download .deb files and record URLs
       run: |
@@ -37,7 +37,7 @@ jobs:
         while read pkg; do
           if [[ "$pkg" =~ ^[a-zA-Z0-9\.\+\-]+$ ]]; then  # 确保是合法的包名
             echo "Downloading package: $pkg"
-            url=$(apt-cache show "$pkg" | grep Filename | awk '{print $2}')
+            url=$(sudo apt-cache show "$pkg" | grep Filename | awk '{print $2}')
             if [ -n "$url" ]; then
               full_url="http://archive.ubuntu.com/ubuntu/$url"
               wget -O "$APT_DOWNLOADS_DIR/${pkg}_$(date +%Y%m%d%H%M%S).deb" "$full_url"
@@ -54,7 +54,7 @@ jobs:
     - name: Move downloaded .deb files to DEBS_DIR
       run: |
         if ls "$APT_DOWNLOADS_DIR"/*.deb 1>/dev/null 2>&1; then
-          cp "$APT_DOWNLOADS_DIR"/*.deb "$DEBS_DIR/"
+          sudo cp "$APT_DOWNLOADS_DIR"/*.deb "$DEBS_DIR/"
           count=$(ls "$DEBS_DIR"/*.deb | wc -l)
           echo "Found $count .deb files"
           echo "count=$count" >> $GITHUB_OUTPUT
