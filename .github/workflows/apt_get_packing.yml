@@ -30,8 +30,8 @@ jobs:
         while read pkg; do
           if [[ "$pkg" =~ ^[a-zA-Z0-9\.\+\-]+$ ]]; then  # 确保是合法的包名
             echo "Downloading package: $pkg"
-            apt-get update
-            apt-get download "$pkg"
+            sudo apt-get update
+            sudo apt-get download "$pkg"
           else
             echo "Skipping invalid package name: $pkg"
           fi
@@ -39,7 +39,7 @@ jobs:
 
     - name: Move downloaded .deb files to DEBS_DIR
       run: |
-        APT_CACHE_DIR=$(apt-config shell Dir::Cache/apt Dir)
+        APT_CACHE_DIR=$(sudo apt-config shell Dir::Cache/apt Dir)
         APT_CACHE_DIR=${APT_CACHE_DIR#*=}
         if [ -z "$APT_CACHE_DIR" ]; then
           APT_CACHE_DIR="/var/cache/apt/archives"
