@@ -22,7 +22,7 @@ jobs:
 
     - name: Create debs.list file from input
       run: |
-        echo "${{ github.event.inputs.packages }}" > /tmp/debs.list
+        echo "${{ github.event.inputs.packages }}" | tr ' ' '\n' > /tmp/debs.list
 
     - name: Download .deb files
       run: |
