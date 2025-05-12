@@ -1,137 +1,94 @@
-name: Offline Package Download and DNS Setup
+name: Download Custom Deb Package
 
 on:
   workflow_dispatch:
     inputs:
       package_name:
-        description: '软件包名称（可用于安装bind9和dnsutils等）'
+        description: '要下载的deb包名称(例如: firefox)'
         required: true
-        type: string
+        default: 'firefox'
+      repository_url:
+        description: '可选: 指定软件源URL'
+        required: false
+        default: ''
+      gpg_key:
+        description: '可选: 指定GPG密钥URL'
+        required: false
+        default: ''
 
 jobs:
-  download-packages:
+  download:
     runs-on: ubuntu-22.04
-
     steps:
-      - name: 添加用户到sudoers组并赋予权限
+      - name: 清理并准备环境
         run: |
-          echo "Adding runner to sudoers group..."
-          echo "runner ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/runner
-          sudo chmod 0440 /etc/sudoers.d/runner
-          echo "Sudoers group updated."
+          sudo -i
+          apt-get clean
+          rm -rf /var/lib/apt/lists/*
+          mkdir -p /tmp/deb-packages
 
-      - name: 创建保存目录
+      - name: 添加自定义软件源(如有)
+        if: github.event.inputs.repository_url != ''
         run: |
-          echo "Creating directory for packages..."
-          sudo mkdir -p /tmp/packages
-          sudo chmod 777 /tmp/packages
-          echo "Directory /tmp/packages created."
-
-      - name: 清理apt缓存
-        run: |
-          echo "Cleaning apt cache..."
-          sudo apt-get clean
-          echo "Apt cache cleaned."
-
-      - name: 更新apt源
-        run: |
-          echo "Updating apt package lists..."
-          sudo apt-get update -y
-          echo "Apt package lists updated."
-
-      - name: 修复软件包依赖
-        run: |
-          echo "Fixing package dependencies..."
-          sudo apt-get install -f
-          echo "Dependencies fixed."
-
-      - name: 重置dpkg数据库
-        run: |
-          echo "Resetting dpkg database..."
-          sudo dpkg --configure -a
-          echo "dpkg database reset."
-
-      - name: 安装apt-rdepends
-        run: |
-          echo "Installing apt-rdepends for dependency resolution..."
-          sudo apt-get install -y apt-rdepends
-          echo "apt-rdepends installed."
-
-      - name: 配置APT下载目录
-        run: |
-          echo "Configuring APT download directory..."
-          echo 'Dir::Cache::Archives "/tmp/packages";' | sudo tee /etc/apt/apt.conf.d/99custom-download-dir
-          sudo chmod 644 /etc/apt/apt.conf.d/99custom-download-dir
-          echo "APT download directory configured to /tmp/packages"
-
-      - name: 下载指定软件包及其依赖（处理debconf-2.0错误）
-        run: |
-          echo "Downloading specified package and its dependencies..."
-
-          echo "Downloading package: ${{ github.event.inputs.package_name }}"
-          sudo apt-get -d install ${{ github.event.inputs.package_name }} || true
-
-          echo "Resolving dependencies using apt-rdepends..."
-          sudo apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ ") || true
-
-          echo "Handling debconf-2.0 error if any..."
-          sudo apt download $(apt-rdepends ${{ github.event.inputs.package_name }} | grep -v "^ " | sed 's/debconf-2.0/debconf/g') || true
-
-          echo "Using fallback method for downloading dependencies..."
-          for i in $(sudo apt-cache depends ${{ github.event.inputs.package_name }} | grep -E 'Depends|Recommends|Suggests' | cut -d ':' -f 2,3 | sed -e s/'<'/''/ -e s/'>'/''/); do
-            echo "Downloading dependency: $i"
-            sudo apt-get download $i || true
-          done
-
-          echo "Printing download URLs for all .deb files..."
-          for deb_file in /tmp/packages/*.deb; do
-            if [ -f "$deb_file" ]; then
-              pkg_name=$(dpkg-deb -f "$deb_file" Package)
-              pkg_version=$(dpkg-deb -f "$deb_file" Version)
-              repo_info=$(apt-cache policy "$pkg_name" | grep 'Candidate' -A 5 | grep 'http' | awk '{print $1}')
-              echo "Package: $pkg_name ($pkg_version)"
-              echo "Download URL: $repo_info/pool/main/${pkg_name:0:1}/$pkg_name/${pkg_name}_${pkg_version}_amd64.deb"
-              echo "----------------------------------------"
-            fi
-          done
-
-          echo "Download process completed. Checking downloaded files..."
-          ls -l /tmp/packages/
-
-      - name: 确保存在下载的软件包
-        run: |
-          echo "Verifying downloaded packages..."
-          if [ ! "$(ls -A /tmp/packages/*.deb 2>/dev/null)" ]; then
-            echo "No .deb files were downloaded. Please check the package name or download commands.";
-            exit 1;
+          echo "deb ${{ github.event.inputs.repository_url }} $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/custom.list
+          if [ "${{ github.event.inputs.gpg_key }}" != "" ]; then
+            wget -qO - ${{ github.event.inputs.gpg_key }} | sudo gpg --dearmor -o /usr/share/keyrings/custom-archive-keyring.gpg
           fi
-          echo "Packages downloaded successfully."
+          sudo apt-get update
 
-      - name: 打包下载的软件包
+      - name: 更新包列表
+        run: sudo apt-get update
+
+      - name: 下载deb包及其依赖
         run: |
-          echo "Compressing downloaded packages into a tarball..."
+          PACKAGE="${{ github.event.inputs.package_name }}"
+          echo "准备下载包: $PACKAGE"
+          
+          # 下载包及其依赖
+          sudo apt-get install -y --download-only $PACKAGE
+          
+          # 查找下载的deb文件
+          DEB_FILES=$(find /var/cache/apt/archives -name "*.deb" -type f)
+          
+          # 复制到临时目录
+          for file in $DEB_FILES; do
+            cp "$file" /tmp/deb-packages/
+          done
+          
+          # 创建tar包
           cd /tmp
-          tar -czvf packages.tar.gz packages
-          echo "Tarball created at /tmp/packages.tar.gz."
+          tar -czvf deb-packages.tar.gz deb-packages/
+          
+          # 计算文件哈希
+          SHA256=$(sha256sum deb-packages.tar.gz | awk '{print $1}')
+          
+          # 输出信息供后续步骤使用
+          echo "deb_files=$DEB_FILES" >> $GITHUB_ENV
+          echo "sha256=$SHA256" >> $GITHUB_ENV
 
-      - name: 上传打包文件
+      - name: 显示下载信息
+        run: |
+          echo "成功下载以下deb包:"
+          echo "$deb_files"
+          echo "包文件哈希(SHA256): $sha256"
+
+      - name: 上传为构建产物
         uses: actions/upload-artifact@v4
         with:
-          name: offline-packages
-          path: /tmp/packages.tar.gz
+          name: deb-packages
+          path: /tmp/deb-packages.tar.gz
+          retention-days: 7
 
-      - name: 安装下载的软件包（假设已将软件包传输到目标无网络环境）
+      - name: 生成下载链接
+        id: generate_url
         run: |
-          echo "Installing downloaded packages in an offline environment..."
-          cd /tmp/packages
-          sudo dpkg -i *.deb || true
-          echo "Resolving dependencies in offline environment..."
-          sudo apt-get install -f || true
-          echo "Packages installed."
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/suites/${{ github.run_id }}/artifacts/${{ github.run_number }}"
+          echo "download_url=$DOWNLOAD_URL" >> $GITHUB_ENV
+          echo "::set-output name=url::$DOWNLOAD_URL"
 
-      - name: 移除sudo权限
+      - name: 打印下载链接
         run: |
-          echo "Removing sudo privileges for runner..."
-          sudo rm /etc/sudoers.d/runner
-          sudo rm /etc/apt/apt.conf.d/99custom-download-dir
-          echo "Sudo privileges removed."
+          echo "========================================="
+          echo "下载链接: ${{ env.download_url }}"
+          echo "包文件哈希(SHA256): ${{ env.sha256 }}"
+          echo "========================================="    
