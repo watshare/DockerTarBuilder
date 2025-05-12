@@ -1,0 +1,70 @@
+name: DEB apt download
+
+on:
+  workflow_dispatch:
+    inputs:
+      plugins:
+        description: '以空格分隔的插件名称列表（例如：nginx mysql redis）'
+        required: true
+        default: 'nginx mysql'
+
+jobs:
+  deb-package-manager:
+    runs-on: ubuntu-22.04
+    concurrency: self-hosted  # 防止并发冲突
+    steps:
+      - name: 初始化工作环境
+        run: |
+          # 创建专用目录结构
+          mkdir -p /opt/deb-workspace/{downloads,packages}
+          sudo chmod 777 /opt/deb-workspace  # 确保有足够权限
+
+      - name: 更新包索引
+        run: |
+          sudo apt-get update
+
+      - name: 下载插件包及其依赖（包括递归依赖）
+        env:
+          PLUGIN_LIST: ${{ github.event.inputs.plugins }}
+          DOWNLOAD_DIR: /opt/deb-workspace/downloads
+        run: |
+          # 创建下载目录
+          sudo mkdir -p "$DOWNLOAD_DIR"
+          sudo chmod 777 "$DOWNLOAD_DIR"  # 确保有权限
+
+          # 使用 apt-get install --download-only 下载插件及其依赖
+          for plugin in $PLUGIN_LIST; do
+            echo "Downloading $plugin and its dependencies..."
+            if ! sudo apt-get install --download-only -y "$plugin"; then
+              echo "Warning: Failed to download $plugin. Skipping..."
+              continue
+            fi
+          done
+
+          # 将下载的包移动到指定目录
+          sudo mv /var/cache/apt/archives/*.deb "$DOWNLOAD_DIR/" || echo "No .deb files to move."
+
+      - name: 验证文件完整性
+        run: |
+          cd /opt/deb-workspace/downloads
+          for deb in *.deb; do
+            echo "验证 $deb ..."
+            dpkg-deb -I "$deb" > /dev/null || exit 1
+          done
+
+      - name: 创建安装包集合
+        run: |
+          cd /opt/deb-workspace
+          tar -czvf packages.tar.gz downloads/*.deb
+          echo "打包完成：packages.tar.gz"
+
+      - name: 清理临时文件
+        run: |
+          sudo rm -rf /opt/deb-workspace/downloads/*
+
+      - name: 下载链接生成
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-packages-$(date +%Y%m%d%H%M)
+          path: /opt/deb-workspace/packages.tar.gz
+          retention-days: 1  # 保留7天下载记录
