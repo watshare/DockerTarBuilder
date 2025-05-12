@@ -1,4 +1,4 @@
-name: Python Plugin Packager
+name:ubuntu Python whl Packager
 
 on:
   workflow_dispatch:
