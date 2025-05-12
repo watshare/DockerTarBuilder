@@ -1,4 +1,4 @@
-name: Python Plugin Packager
+name: windows Python whl Packager
 
 on:
   workflow_dispatch:
